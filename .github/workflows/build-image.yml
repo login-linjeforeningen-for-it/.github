@@ -70,8 +70,9 @@ jobs:
             DIR=$(dirname "$DOCKERFILE")
             if [ "$DIR" = "." ]; then PKG="$REPO_NAME"
             else PKG="$REPO_NAME/$(basename "$DIR")"; fi
-            gh api --method PATCH \
+            if ! gh api --method PATCH \
               "/orgs/$REPO_OWNER/packages/container/${PKG//\//%2F}" \
-              -f visibility=public \
-              || echo "::warning::Could not set $PKG public (may need org admin PAT)"
+              -f visibility=public; then
+              echo "::warning::Failed to set $PKG public"
+            fi
           done
