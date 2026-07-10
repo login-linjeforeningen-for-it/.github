@@ -1,0 +1,60 @@
+name: Build & Push
+
+on:
+  workflow_call:
+    inputs:
+      build-args:
+        description: Newline-separated build args (KEY=VALUE)
+        required: false
+        type: string
+        default: ""
+    outputs:
+      image-tag:
+        description: Primary tag pushed
+        value: ${{ jobs.build.outputs.image-tag }}
+
+jobs:
+  build:
+    name: Build & Push
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.build.outputs.image-tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push
+        id: build
+        env:
+          BUILD_ARGS: ${{ inputs.build-args }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          TAG=$([[ "$GITHUB_REF_NAME" == "main" ]] && echo "latest" || echo "$GITHUB_REF_NAME")
+          SHA="sha-$(git rev-parse --short HEAD)"
+          echo "image-tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          mapfile -t ARGS < <(printf '%s\n' "$BUILD_ARGS" | grep -vE '^[[:space:]]*(#|$)' | sed 's/^/--build-arg=/')
+          mapfile -t DOCKERFILES < <(find . -name "Dockerfile" -not -path "*/node_modules/*")
+          [ ${#DOCKERFILES[@]} -eq 0 ] && { echo "::error::No Dockerfiles found"; exit 1; }
+
+          for DOCKERFILE in "${DOCKERFILES[@]}"; do
+            DIR=$(dirname "$DOCKERFILE")
+            if [ "$DIR" = "." ]; then SERVICE="$REPO_NAME"; IMAGE="ghcr.io/$REPO_OWNER/$REPO_NAME"
+            else SERVICE=$(basename "$DIR"); IMAGE="ghcr.io/$REPO_OWNER/$REPO_NAME/$SERVICE"; fi
+            docker buildx build "${ARGS[@]}" \
+              --cache-from "type=gha,scope=${SERVICE//[^a-zA-Z0-9_-]/-}" \
+              --cache-to "type=gha,mode=max,scope=${SERVICE//[^a-zA-Z0-9_-]/-}" \
+              --tag "$IMAGE:$TAG" --tag "$IMAGE:$SHA" \
+              --push -f "$DOCKERFILE" "$DIR"
+          done
