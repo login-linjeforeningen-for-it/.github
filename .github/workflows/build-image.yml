@@ -56,7 +56,7 @@ jobs:
               --cache-from "type=gha,scope=${SERVICE//[^a-zA-Z0-9_-]/-}" \
               --cache-to "type=gha,mode=max,scope=${SERVICE//[^a-zA-Z0-9_-]/-}" \
               --tag "$IMAGE:$TAG" --tag "$IMAGE:$SHA" \
-              --push -f "$DOCKERFILE" "$DIR"
+              --provenance=false --push -f "$DOCKERFILE" "$DIR"
           done
 
       - name: Make packages public
